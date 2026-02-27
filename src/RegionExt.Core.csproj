@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Platforms>x64</Platforms>
+    <AssemblyName>RegionExt.Core</AssemblyName>
+    <RootNamespace>RegionExtension</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="TShockAPI.TZ" Version="6.0.0.3" />
+  </ItemGroup>
+</Project>

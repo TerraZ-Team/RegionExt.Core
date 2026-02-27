@@ -1,0 +1,50 @@
+using RegionExtension.Commands.Parameters;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using TShockAPI;
+using TShockAPI.DB;
+
+namespace RegionExtension.Commands.SubCommands
+{
+    public class RequestAcceptSubCommand : SubCommand
+    {
+        public override string[] Names => new string[] { "requestaccept", "ra" };
+
+        public override string Description => "RequestAcceptDesc";
+
+        public override void InitializeParams()
+        {
+            _params = new ICommandParam[]
+            {
+                new RegionParam("region", "which region will be accepted. Default: region in your location", true),
+            };
+        }
+
+        public override void Execute(CommandArgsExtension args)
+        {
+            var region = (Region)Params[0].Value;
+            if(!args.Context.RegionManager.RegionRequestManager.Requests.Any(r => r.Region.ID == region.ID))
+            {
+                args.Player.SendErrorMessage("Region '{0}' does not have request!".SFormat(region.Name));
+                return;
+            }
+            SendRegionInfo(args, region);
+        }
+
+        private void SendRegionInfo(CommandArgsExtension args, Region region)
+        {
+            if(args.Context.RegionManager.RemoveRequest(region, args.Player.Account, true))
+            {
+                args.Player.SendSuccessMessage("Region '{0}' accepted!".SFormat(region.Name));
+            }
+            else
+            {
+                args.Player.SendErrorMessage("Failed accept region '{0}'!".SFormat(region.Name));
+            }
+        }
+    }
+}
+
