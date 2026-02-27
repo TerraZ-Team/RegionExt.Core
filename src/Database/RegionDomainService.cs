@@ -2,6 +2,7 @@ using RegionExtension.Commands;
 using RegionExtension.Commands.Parameters;
 using RegionExtension.Database.Actions;
 using RegionExtension.Database.EventsArgs;
+using RegionExtension.Database.Modules;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -18,18 +19,18 @@ namespace RegionExtension.Database
         private readonly Func<RegionInfoManager> _infoManagerProvider;
         private readonly Func<RegionHistoryManager> _historyManagerProvider;
         private readonly Func<DeletedRegionsDB> _deletedRegionsProvider;
-        private readonly Func<RegionRequestManager> _requestManagerProvider;
-        private readonly Func<RegionTriggers.TriggerManager> _triggerManagerProvider;
-        private readonly Func<RegionTriggers.PropertyManager> _propertyManagerProvider;
+        private readonly Func<IRegionRequestManager> _requestManagerProvider;
+        private readonly Func<IRegionTriggerManager> _triggerManagerProvider;
+        private readonly Func<IRegionPropertyManager> _propertyManagerProvider;
 
         public RegionDomainService(
             IDbConnection tshockDatabase,
             Func<RegionInfoManager> infoManagerProvider,
             Func<RegionHistoryManager> historyManagerProvider,
             Func<DeletedRegionsDB> deletedRegionsProvider,
-            Func<RegionRequestManager> requestManagerProvider,
-            Func<RegionTriggers.TriggerManager> triggerManagerProvider,
-            Func<RegionTriggers.PropertyManager> propertyManagerProvider)
+            Func<IRegionRequestManager> requestManagerProvider,
+            Func<IRegionTriggerManager> triggerManagerProvider,
+            Func<IRegionPropertyManager> propertyManagerProvider)
         {
             _tshockDatabase = tshockDatabase;
             _infoManagerProvider = infoManagerProvider;
@@ -165,14 +166,6 @@ namespace RegionExtension.Database
             return request != null && RemoveRequest(request.Region, user, true);
         }
 
-        public bool ApproveRequest(UserAccount user, Request request)
-        {
-            var requestManager = _requestManagerProvider();
-            if (requestManager == null || !requestManager.Requests.Contains(request))
-                return false;
-            return RemoveRequest(request.Region, user, true);
-        }
-
         public bool DenyRequest(UserAccount user, int regionId)
         {
             var request = _requestManagerProvider()?.Requests.FirstOrDefault(req => req.Region.ID == regionId);
@@ -183,14 +176,6 @@ namespace RegionExtension.Database
         {
             var request = _requestManagerProvider()?.Requests.FirstOrDefault(req => req.Region.ID == region.ID);
             return request != null && RemoveRequest(request.Region, user, false);
-        }
-
-        public bool DenyRequest(UserAccount user, Request request)
-        {
-            var requestManager = _requestManagerProvider();
-            if (requestManager == null || !requestManager.Requests.Contains(request))
-                return false;
-            return RemoveRequest(request.Region, user, false);
         }
 
         public bool RemoveRequest(Region region, UserAccount user, bool approved)

@@ -1,16 +1,8 @@
-using IL.Terraria.DataStructures;
 using Microsoft.Xna.Framework;
-using RegionExtension.Commands;
-using Steamworks;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Terraria;
 using TShockAPI;
-using TShockAPI.DB;
-using RegionExtension.Database;
 
 namespace RegionExtension
 {
@@ -50,7 +42,7 @@ namespace RegionExtension
             int r = (int)Math.Floor(firstClr.R + (secondClr.R - firstClr.R) * pos);
             int g = (int)Math.Floor(firstClr.G + (secondClr.G - firstClr.G) * pos);
             int b = (int)Math.Floor(firstClr.B + (secondClr.B - firstClr.B) * pos);
-            var hex = Color.FromNonPremultiplied(r, g, b, 255).Hex3();
+            var hex = $"{r:X2}{g:X2}{b:X2}";
             if(pos < 0 || pos > 1)
             {
                 r = 255;
@@ -64,49 +56,6 @@ namespace RegionExtension
                 return res;
             }
             return $"[c/{hex}:{str}]";
-        }
-
-        public static (bool res, string msg) CheckConfigConditions(ConfigFile config, RegionExtManager manager, TSPlayer player, Region region)
-        {
-            if (player?.Account == null)
-                return (false, "You must be logged in to create request.");
-
-            var requestManager = manager?.RegionRequestManager;
-            if (requestManager == null)
-                return (false, "Request module is disabled.");
-
-            var count = requestManager.Requests.Count(r => r.User.ID == player.Account.ID);
-            var area = region.Area.Width * region.Area.Height;
-            var settings = GetSettingsByTSPlayer(config, player);
-            if(settings.MaxRequestCount != 0 && count >= settings.MaxRequestCount)
-                return new (false, "You already have '{0}' requests!".SFormat(count));
-            if(settings.MaxRequestArea != 0 && area > settings.MaxRequestArea)
-                return new (false, "Max region area is '{0}' tiles! Your is '{1}'.".SFormat(settings.MaxRequestArea, area));
-            if (settings.MaxRequestWidth != 0 && region.Area.Width > settings.MaxRequestWidth)
-                return new(false, "Max region width is '{0}' tiles! Your is '{1}'.".SFormat(settings.MaxRequestWidth, region.Area.Width));
-            if (settings.MaxRequestHeight != 0 && region.Area.Height > settings.MaxRequestHeight)
-                return new(false, "Max region height is '{0}' tiles! Your is '{1}'.".SFormat(settings.MaxRequestHeight, region.Area.Height));
-            return (true, "All checks passed");
-        }
-
-        public static RequestSettings GetSettingsByTSPlayer(ConfigFile config, TSPlayer plr)
-        {
-            var settings = config.RequestSettings.FirstOrDefault(r => r.GroupName == plr?.Group.Name);
-            if (settings == null)
-                settings = config.RequestSettings.FirstOrDefault(r => r.GroupName == "default");
-            if (settings == null)
-                settings = new RequestSettings();
-            return settings;
-        }
-
-        public static RequestSettings GetSettingsByUserAccount(ConfigFile config, UserAccount account)
-        {
-            var settings = config.RequestSettings.FirstOrDefault(r => r.GroupName == account?.Group);
-            if (settings == null)
-                settings = config.RequestSettings.FirstOrDefault(r => r.GroupName == "default");
-            if (settings == null)
-                settings = new RequestSettings();
-            return settings;
         }
 
         public static string GetGradientByDateTime(string str, DateTime start, DateTime end)

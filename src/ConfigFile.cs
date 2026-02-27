@@ -14,25 +14,7 @@ namespace RegionExtension
         public bool ContextAllow = true;
         public bool AutoCompleteSameName = true;
         public string AutoCompleteSameNameFormat = "{0}:{1}"; //{0} - region name, {1} - region number
-        public string NotificationPeriod = "10m";
         public string DefaultLocalization = "EN";
-        public string[] BannedTriggerCommands = new string[] {"group",  "user"};
-        public RequestSettings[] RequestSettings = new RequestSettings[]
-            {
-                new RequestSettings {},
-                new RequestSettings
-                {
-                    GroupName = "superadmin",
-                    MaxRequestCount = 0,
-                    RequestTime = "0s",
-                    AutoApproveRequest = true,
-                    MaxRequestArea = 0,
-                    MaxRequestHeight = 0,
-                    MaxRequestWidth = 0,
-                    ProtectRequestedRegion = true,
-                    DefaultRequestZ = 0
-                }
-            };
 
         public static ConfigFile Read()
         {

@@ -1,4 +1,5 @@
 using Microsoft.Xna.Framework;
+using RegionExtension.Database.Modules;
 using System;
 using System.Collections.Generic;
 using TShockAPI;
@@ -11,9 +12,9 @@ namespace RegionExtension.Database
     {
         public RegionRuntimeService(
             PluginContext context,
-            Func<RegionRequestManager> requestManagerProvider,
-            Func<RegionTriggers.TriggerManager> triggerManagerProvider,
-            Func<RegionTriggers.PropertyManager> propertyManagerProvider,
+            Func<IRegionRequestManager> requestManagerProvider,
+            Func<IRegionTriggerManager> triggerManagerProvider,
+            Func<IRegionPropertyManager> propertyManagerProvider,
             Func<Region, UserAccount, bool, bool> removeRequest)
         {
         }

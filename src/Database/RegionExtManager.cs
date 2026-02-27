@@ -1,6 +1,6 @@
 using RegionExtension.Commands;
 using RegionExtension.Commands.Parameters;
-using RegionExtension.RegionTriggers;
+using RegionExtension.Database.Modules;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -19,17 +19,17 @@ namespace RegionExtension.Database
         private readonly RegionRuntimeService _runtimeService;
 
         private RegionServices _services;
-        private RegionRequestManager _requestManager;
-        private TriggerManager _triggerManager;
-        private PropertyManager _propertyManager;
+        private IRegionRequestManager _requestManager;
+        private IRegionTriggerManager _triggerManager;
+        private IRegionPropertyManager _propertyManager;
         private bool _fullyLoaded;
 
         public RegionHistoryManager HistoryManager => _services?.HistoryManager;
         public DeletedRegionsDB DeletedRegions => _services?.DeletedRegions;
         public RegionInfoManager InfoManager => _services?.InfoManager;
-        public RegionRequestManager RegionRequestManager => _requestManager;
-        public TriggerManager TriggerManager => _triggerManager;
-        public PropertyManager PropertyManager => _propertyManager;
+        public IRegionRequestManager RegionRequestManager => _requestManager;
+        public IRegionTriggerManager TriggerManager => _triggerManager;
+        public IRegionPropertyManager PropertyManager => _propertyManager;
 
         public RegionExtManager(IDbConnection db, DatabaseRepositoryFactory databaseRepositoryFactory = null, PluginContext context = null)
         {
@@ -85,7 +85,7 @@ namespace RegionExtension.Database
             }
         }
 
-        public bool AttachRequestManager(RegionRequestManager requestManager)
+        public bool AttachRequestManager(IRegionRequestManager requestManager)
         {
             if (!_fullyLoaded || requestManager == null)
                 return false;
@@ -93,14 +93,14 @@ namespace RegionExtension.Database
             return true;
         }
 
-        public void DetachRequestManager(RegionRequestManager requestManager = null)
+        public void DetachRequestManager(IRegionRequestManager requestManager = null)
         {
             if (requestManager != null && !ReferenceEquals(_requestManager, requestManager))
                 return;
             _requestManager = null;
         }
 
-        public bool AttachTriggerManagers(TriggerManager triggerManager, PropertyManager propertyManager)
+        public bool AttachTriggerManagers(IRegionTriggerManager triggerManager, IRegionPropertyManager propertyManager)
         {
             if (!_fullyLoaded || triggerManager == null || propertyManager == null)
                 return false;
@@ -109,7 +109,7 @@ namespace RegionExtension.Database
             return true;
         }
 
-        public void DetachTriggerManagers(TriggerManager triggerManager = null, PropertyManager propertyManager = null)
+        public void DetachTriggerManagers(IRegionTriggerManager triggerManager = null, IRegionPropertyManager propertyManager = null)
         {
             if (triggerManager != null && !ReferenceEquals(_triggerManager, triggerManager))
                 return;
@@ -180,17 +180,11 @@ namespace RegionExtension.Database
         public bool ApproveRequest(UserAccount user, Region region) =>
             _domainService.ApproveRequest(user, region);
 
-        public bool ApproveRequest(UserAccount user, Request request) =>
-            _domainService.ApproveRequest(user, request);
-
         public bool DenyRequest(UserAccount user, int regionId) =>
             _domainService.DenyRequest(user, regionId);
 
         public bool DenyRequest(UserAccount user, Region region) =>
             _domainService.DenyRequest(user, region);
-
-        public bool DenyRequest(UserAccount user, Request request) =>
-            _domainService.DenyRequest(user, request);
 
         public bool RemoveRequest(Region region, UserAccount user, bool approved) =>
             _domainService.RemoveRequest(region, user, approved);
@@ -204,9 +198,6 @@ namespace RegionExtension.Database
 
         public void SendRequestNotify(TSPlayer player, IEnumerable<string> strings) =>
             _runtimeService.SendRequestNotify(player, strings);
-
-        public IEnumerable<string> GetSortedRegionRequestNames(ConfigFile config) =>
-            _requestManager?.GetSortedRegionRequestsNames(config) ?? Array.Empty<string>();
 
         public List<string> GetRegionInfo(Region region) =>
             _domainService.GetRegionInfo(region);

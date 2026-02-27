@@ -14,12 +14,19 @@ namespace RegionExtension
         private readonly string _ownerName;
         private readonly int _z;
         private readonly bool _protect;
-        private readonly bool _isRequest;
         private readonly PluginContext _context;
+        private readonly Func<Region, bool> _onRegionCreated;
 
         public UserAccount User { get { return _player.Account; } }
 
-        public FastRegion(PluginContext context, TSPlayer player, string regionName, string ownerName, int z = 0, bool protect = true, bool isRequest = false)
+        public FastRegion(
+            PluginContext context,
+            TSPlayer player,
+            string regionName,
+            string ownerName,
+            int z = 0,
+            bool protect = true,
+            Func<Region, bool> onRegionCreated = null)
         {
             _context = context;
             _player = player;
@@ -27,7 +34,7 @@ namespace RegionExtension
             _ownerName = ownerName;
             _z = z;
             _protect = protect;
-            _isRequest = isRequest;
+            _onRegionCreated = onRegionCreated;
             _player.SendInfoMessage("Hit tile to Set Points, or use The Grand Design.");
         }
 
@@ -78,27 +85,13 @@ namespace RegionExtension
                 Z = _z,
                 DisableBuild = _protect
             };
-            if (_isRequest)
+
+            if (_onRegionCreated != null)
             {
-                var requestConfig = RequestConfigResolver.Resolve(_context.Config);
-                var checkResult = Utils.CheckConfigConditions(requestConfig, _context.RegionManager, _player, region);
-                var settings = Utils.GetSettingsByTSPlayer(requestConfig, _player);
-                region.Z = settings.DefaultRequestZ;
-                region.DisableBuild = settings.ProtectRequestedRegion;
-                if (!checkResult.res)
-                {
-                    _player.SendErrorMessage(checkResult.msg);
-                    return;
-                }
-                if (_context.RegionManager.CreateRequest(region, _player))
-                {
-                    _player.SendSuccessMessage("Region '{0}' defined!".SFormat(region.Name));
-                    _player.SendSuccessMessage("Request created!".SFormat(region.Name));
-                }
-                else
-                    _player.SendErrorMessage("Failed define region '{0}'!".SFormat(region.Name));
+                _onRegionCreated(region);
                 return;
             }
+
             if (_context.RegionManager.DefineRegion(_player, region))
                 _player.SendSuccessMessage("Set region " + _regionName);
         }

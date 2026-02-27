@@ -55,22 +55,6 @@ namespace RegionExtension.Commands.SubCommands
                     FooterFormat = string.Format("Type {0}{1} info {2} {{0}} for more information.", TShockAPI.Commands.Specifier, usedName, region.Name)
                 }
             );
-
-            var requestManager = args.Context.RegionManager.RegionRequestManager;
-            if (requestManager == null)
-                return;
-
-            var req = requestManager.Requests.FirstOrDefault(r => r.Region.ID == region.ID);
-            if (req == null)
-                return;
-            var settings = Utils.GetSettingsByUserAccount(args.Context.Config, req.User);
-            var reqTime = StringTime.FromString(settings.RequestTime);
-            if (!settings.AutoApproveRequest && !reqTime.IsZero())
-            {
-                args.Player.SendMessage("This region requires request confirmation!", Microsoft.Xna.Framework.Color.Aqua);
-                var res = (req.DateCreation + StringTime.FromString(Utils.GetSettingsByUserAccount(args.Context.Config, req.User).RequestTime));
-                args.Player.SendMessage("Region will be deleted in '{0}'!".SFormat((req.DateCreation + reqTime).ToString(Utils.DateFormat)), Microsoft.Xna.Framework.Color.Aqua);
-            }
         }
 
         public bool CheckRegionOwn(CommandArgsExtension args, Region region)
