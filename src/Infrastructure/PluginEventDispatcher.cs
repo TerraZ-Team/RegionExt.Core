@@ -36,7 +36,6 @@ namespace RegionExtension.Infrastructure
             ServerApi.Hooks.NetGetData.Register(_plugin, OnGetData);
             ServerApi.Hooks.GamePostInitialize.Register(_plugin, OnPostInitialize, int.MinValue);
             ServerApi.Hooks.GamePostUpdate.Register(_plugin, OnPostUpdate);
-            ServerApi.Hooks.NetGreetPlayer.Register(_plugin, OnGreetPlayer);
             ServerApi.Hooks.NetSendData.Register(_plugin, OnSendData);
             GeneralHooks.ReloadEvent += OnReload;
             PlayerHooks.PlayerLogout += OnPlayerLogout;
@@ -51,7 +50,6 @@ namespace RegionExtension.Infrastructure
             ServerApi.Hooks.NetGetData.Deregister(_plugin, OnGetData);
             ServerApi.Hooks.GamePostInitialize.Deregister(_plugin, OnPostInitialize);
             ServerApi.Hooks.GamePostUpdate.Deregister(_plugin, OnPostUpdate);
-            ServerApi.Hooks.NetGreetPlayer.Deregister(_plugin, OnGreetPlayer);
             ServerApi.Hooks.NetSendData.Deregister(_plugin, OnSendData);
             GeneralHooks.ReloadEvent -= OnReload;
             PlayerHooks.PlayerLogout -= OnPlayerLogout;
@@ -121,11 +119,6 @@ namespace RegionExtension.Infrastructure
                     }
                     break;
             }
-        }
-
-        private void OnGreetPlayer(GreetPlayerEventArgs args)
-        {
-            _context.TriggerIgnores[args.Who] = false;
         }
 
         private void OnPostUpdate(EventArgs args)
@@ -278,16 +271,12 @@ namespace RegionExtension.Infrastructure
 
         private void OnPlayerCommand(PlayerCommandEventArgs args)
         {
-            if (!args.Player.HasPermission(Permissions.RegionExtCmd) && !args.Player.HasPermission("regionext.own"))
+            if (!args.Player.HasPermission(Permissions.RegionExtCmd) && !args.Player.HasPermission(Permissions.RegionOwnCmd))
                 return;
             switch (args.CommandName)
             {
                 case "re":
                 case "regionext":
-                case "rt":
-                case "regiontrigger":
-                case "rp":
-                case "regionproperty":
                 case "ro":
                     case "regionown":
                 case "region":

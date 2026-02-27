@@ -32,16 +32,6 @@ namespace RegionExtension.Commands
             }
             TShockAPI.Commands.ChatCommands.Add(
                     new Command(
-                    Permissions.TriggerIgnore,
-                    args =>
-                    {
-                        context.TriggerIgnores[args.Player.Index] = !context.TriggerIgnores[args.Player.Index];
-                        args.Player.SendInfoMessage("Trigger ignore is " + (context.TriggerIgnores[args.Player.Index] ? "activated!" : "disabled!"));
-                    },
-                    "triggerignore", "ti")
-                    { HelpText = "Ignores any trigger and some property activation." });
-            TShockAPI.Commands.ChatCommands.Add(
-                    new Command(
                     TShockAPI.Permissions.managegroup,
                     args =>
                     {
@@ -82,7 +72,7 @@ namespace RegionExtension.Commands
 
         public static void Dispose()
         {
-            TShockAPI.Commands.ChatCommands.RemoveAll(p => AddedCommands.Any(c => c.Names.Contains(p.Name) || p.Name == "reperm" || p.Name == "reloc" || p.Name == "triggerignore"));
+            TShockAPI.Commands.ChatCommands.RemoveAll(p => AddedCommands.Any(c => c.Names.Contains(p.Name) || p.Name == "reperm" || p.Name == "reloc"));
             TShockAPI.Commands.ChatCommands.AddRange(ReplacedCommands);
         }
     }
