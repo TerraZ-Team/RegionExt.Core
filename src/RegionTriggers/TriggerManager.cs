@@ -258,7 +258,7 @@ namespace RegionExtension.RegionTriggers
             return res;
         }
 
-        internal void Reload(ReloadEventArgs e)
+        public void Reload(ReloadEventArgs e)
         {
             _triggers = new Dictionary<int, List<Trigger>>();
             LoadTriggers();
