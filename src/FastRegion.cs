@@ -80,8 +80,9 @@ namespace RegionExtension
             };
             if (_isRequest)
             {
-                var checkResult = Utils.CheckConfigConditions(_context.Config, _context.RegionManager, _player, region);
-                var settings = Utils.GetSettingsByTSPlayer(_context.Config, _player);
+                var requestConfig = RequestConfigResolver.Resolve(_context.Config);
+                var checkResult = Utils.CheckConfigConditions(requestConfig, _context.RegionManager, _player, region);
+                var settings = Utils.GetSettingsByTSPlayer(requestConfig, _player);
                 region.Z = settings.DefaultRequestZ;
                 region.DisableBuild = settings.ProtectRequestedRegion;
                 if (!checkResult.res)

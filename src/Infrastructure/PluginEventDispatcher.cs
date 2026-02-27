@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using RegionExtension.Commands.Parameters;
 using RegionExtension.Database;
-using RegionExtension.RegionTriggers.Conditions;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.ID;
@@ -41,7 +40,6 @@ namespace RegionExtension.Infrastructure
             ServerApi.Hooks.NetSendData.Register(_plugin, OnSendData);
             GeneralHooks.ReloadEvent += OnReload;
             PlayerHooks.PlayerLogout += OnPlayerLogout;
-            PlayerHooks.PlayerPostLogin += OnPlayerLogin;
             PlayerHooks.PlayerCommand += OnPlayerCommand;
             PlayerHooks.PlayerHasBuildPermission += OnHasPlayerPermission;
             _context.RegionManager = new RegionExtManager(TShock.DB, context: _context);
@@ -57,7 +55,6 @@ namespace RegionExtension.Infrastructure
             ServerApi.Hooks.NetSendData.Deregister(_plugin, OnSendData);
             GeneralHooks.ReloadEvent -= OnReload;
             PlayerHooks.PlayerLogout -= OnPlayerLogout;
-            PlayerHooks.PlayerPostLogin -= OnPlayerLogin;
             PlayerHooks.PlayerCommand -= OnPlayerCommand;
             PlayerHooks.PlayerHasBuildPermission -= OnHasPlayerPermission;
         }
@@ -69,8 +66,6 @@ namespace RegionExtension.Infrastructure
                 _context.Config = ConfigFile.Read();
                 Localization.DefaultLocalization = _context.Config.DefaultLocalization;
                 _context.RegionManager?.Reload(e);
-                if (_context.RegionManager?.TriggerManager != null)
-                    DelayManager.Reload(_plugin);
                 e.Player?.SendInfoMessage("[RegionExt] Config reloaded.");
             }
             catch (Exception ex)
@@ -130,7 +125,6 @@ namespace RegionExtension.Infrastructure
 
         private void OnGreetPlayer(GreetPlayerEventArgs args)
         {
-            _context.RegionManager?.TriggerManager?.OnPlayerEnter(args);
             _context.TriggerIgnores[args.Who] = false;
         }
 
@@ -138,20 +132,6 @@ namespace RegionExtension.Infrastructure
         {
             _context.RegionManager?.Update();
             UpdateLastActive();
-        }
-
-        private void OnPlayerLogin(PlayerPostLoginEventArgs e)
-        {
-            if (StringTime.FromString(_context.Config.NotificationPeriod).IsZero() || !e.Player.HasPermission(Permissions.RegionExtCmd))
-                return;
-
-            var requestManager = _context.RegionManager?.RegionRequestManager;
-            if (requestManager == null)
-                return;
-
-            _context.RegionManager.SendRequestNotify(
-                e.Player,
-                requestManager.GetSortedRegionRequestsNames(_context.Config));
         }
 
         private void OnPostInitialize(EventArgs args)

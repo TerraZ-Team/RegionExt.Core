@@ -1,7 +1,6 @@
 using RegionExtension.Commands;
 using RegionExtension.Commands.Parameters;
 using RegionExtension.RegionTriggers;
-using RegionExtension.RegionTriggers.Conditions;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -15,7 +14,6 @@ namespace RegionExtension.Database
     public class RegionExtManager
     {
         private readonly IDbConnection _tshockDatabase;
-        private readonly PluginContext _context;
         private readonly RegionBootstrapper _bootstrapper;
         private readonly RegionDomainService _domainService;
         private readonly RegionRuntimeService _runtimeService;
@@ -36,7 +34,6 @@ namespace RegionExtension.Database
         public RegionExtManager(IDbConnection db, DatabaseRepositoryFactory databaseRepositoryFactory = null, PluginContext context = null)
         {
             _tshockDatabase = db ?? throw new ArgumentNullException(nameof(db));
-            _context = context ?? new PluginContext();
             _bootstrapper = new RegionBootstrapper(databaseRepositoryFactory ?? new DatabaseRepositoryFactory());
             _domainService = new RegionDomainService(
                 _tshockDatabase,
@@ -47,7 +44,7 @@ namespace RegionExtension.Database
                 () => TriggerManager,
                 () => PropertyManager);
             _runtimeService = new RegionRuntimeService(
-                _context,
+                context ?? new PluginContext(),
                 () => RegionRequestManager,
                 () => TriggerManager,
                 () => PropertyManager,
@@ -88,51 +85,45 @@ namespace RegionExtension.Database
             }
         }
 
-        public bool EnableRequests()
+        public bool AttachRequestManager(RegionRequestManager requestManager)
         {
-            if (!_fullyLoaded || _services?.Connection == null)
+            if (!_fullyLoaded || requestManager == null)
                 return false;
-
-            _requestManager ??= new RegionRequestManager(_services.Connection);
+            _requestManager = requestManager;
             return true;
         }
 
-        public void DisableRequests()
+        public void DetachRequestManager(RegionRequestManager requestManager = null)
         {
+            if (requestManager != null && !ReferenceEquals(_requestManager, requestManager))
+                return;
             _requestManager = null;
         }
 
-        public bool EnableTriggers(TerrariaPlugin plugin)
+        public bool AttachTriggerManagers(TriggerManager triggerManager, PropertyManager propertyManager)
         {
-            if (plugin == null || !_fullyLoaded || _services?.Connection == null)
+            if (!_fullyLoaded || triggerManager == null || propertyManager == null)
                 return false;
-
-            var shouldInitialize = _triggerManager == null || _propertyManager == null;
-            _triggerManager ??= new TriggerManager(_services.Connection, _context.TriggerIgnores);
-            _propertyManager ??= new PropertyManager(_services.Connection, plugin, _context);
-            if (shouldInitialize)
-                DelayManager.Initialize(plugin);
+            _triggerManager = triggerManager;
+            _propertyManager = propertyManager;
             return true;
         }
 
-        public void DisableTriggers(TerrariaPlugin plugin)
+        public void DetachTriggerManagers(TriggerManager triggerManager = null, PropertyManager propertyManager = null)
         {
-            var shouldDisposeDelayManager = _triggerManager != null || _propertyManager != null;
-            if (plugin != null)
-            {
-                _propertyManager?.Dispose(plugin);
-                if (shouldDisposeDelayManager)
-                    DelayManager.Dispose(plugin);
-            }
-
+            if (triggerManager != null && !ReferenceEquals(_triggerManager, triggerManager))
+                return;
+            if (propertyManager != null && !ReferenceEquals(_propertyManager, propertyManager))
+                return;
             _propertyManager = null;
             _triggerManager = null;
         }
 
         public void Dispose(TerrariaPlugin plugin)
         {
-            DisableRequests();
-            DisableTriggers(plugin);
+            _requestManager = null;
+            _triggerManager = null;
+            _propertyManager = null;
             _services?.Connection?.Dispose();
             _services = null;
             _fullyLoaded = false;
@@ -213,6 +204,9 @@ namespace RegionExtension.Database
 
         public void SendRequestNotify(TSPlayer player, IEnumerable<string> strings) =>
             _runtimeService.SendRequestNotify(player, strings);
+
+        public IEnumerable<string> GetSortedRegionRequestNames(ConfigFile config) =>
+            _requestManager?.GetSortedRegionRequestsNames(config) ?? Array.Empty<string>();
 
         public List<string> GetRegionInfo(Region region) =>
             _domainService.GetRegionInfo(region);

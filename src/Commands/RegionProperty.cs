@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace RegionExtension.Commands
 {
-    internal class RegionProperty : CommandExtension
+    public class RegionProperty : CommandExtension
     {
         public override string[] Names => new[] { "regionproperty", "rp" };
         public override string[] Permissions => new[] { RegionExtension.Permissions.RegionPropertyCmd };
