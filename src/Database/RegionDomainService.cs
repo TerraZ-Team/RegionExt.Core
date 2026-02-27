@@ -2,7 +2,6 @@ using RegionExtension.Commands;
 using RegionExtension.Commands.Parameters;
 using RegionExtension.Database.Actions;
 using RegionExtension.Database.EventsArgs;
-using RegionExtension.Database.Modules;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -19,26 +18,17 @@ namespace RegionExtension.Database
         private readonly Func<RegionInfoManager> _infoManagerProvider;
         private readonly Func<RegionHistoryManager> _historyManagerProvider;
         private readonly Func<DeletedRegionsDB> _deletedRegionsProvider;
-        private readonly Func<IRegionRequestManager> _requestManagerProvider;
-        private readonly Func<IRegionTriggerManager> _triggerManagerProvider;
-        private readonly Func<IRegionPropertyManager> _propertyManagerProvider;
 
         public RegionDomainService(
             IDbConnection tshockDatabase,
             Func<RegionInfoManager> infoManagerProvider,
             Func<RegionHistoryManager> historyManagerProvider,
-            Func<DeletedRegionsDB> deletedRegionsProvider,
-            Func<IRegionRequestManager> requestManagerProvider,
-            Func<IRegionTriggerManager> triggerManagerProvider,
-            Func<IRegionPropertyManager> propertyManagerProvider)
+            Func<DeletedRegionsDB> deletedRegionsProvider)
         {
             _tshockDatabase = tshockDatabase;
             _infoManagerProvider = infoManagerProvider;
             _historyManagerProvider = historyManagerProvider;
             _deletedRegionsProvider = deletedRegionsProvider;
-            _requestManagerProvider = requestManagerProvider;
-            _triggerManagerProvider = triggerManagerProvider;
-            _propertyManagerProvider = propertyManagerProvider;
         }
 
         public bool RenameRegion(CommandArgsExtension args, Region region, string newName)
@@ -105,18 +95,7 @@ namespace RegionExtension.Database
         public bool DeleteRegion(TSPlayer user, Region region)
         {
             RegisterRegionDeletion(user, region);
-            var result = TShock.Regions.DeleteRegion(region.Name);
-            if (!result)
-                return false;
-
-            _triggerManagerProvider()?.HandleRegionDeleted(region);
-            _propertyManagerProvider()?.HandleRegionDeleted(region);
-
-            var requestManager = _requestManagerProvider();
-            if (requestManager != null && requestManager.Requests.Any(r => r.Region.ID == region.ID))
-                RemoveRequest(region, user?.Account, false);
-
-            return true;
+            return TShock.Regions.DeleteRegion(region.Name);
         }
 
         public bool DefineRegion(TSPlayer user, Region region)
@@ -137,67 +116,6 @@ namespace RegionExtension.Database
 
             var definedRegion = TShock.Regions.GetRegionByName(region.Name);
             _infoManagerProvider()?.AddNewRegion(definedRegion.ID, user?.Account?.ID ?? 0);
-            return true;
-        }
-
-        public bool CreateRequest(Region region, TSPlayer user)
-        {
-            if (user?.Account == null)
-                return false;
-            if (!DefineRegion(user, region))
-                return false;
-
-            var definedRegion = TShock.Regions.GetRegionByName(region.Name);
-            if (definedRegion == null)
-                return false;
-
-            return _requestManagerProvider()?.AddRequest(definedRegion, user.Account) == true;
-        }
-
-        public bool ApproveRequest(UserAccount user, int regionId)
-        {
-            var request = _requestManagerProvider()?.Requests.FirstOrDefault(req => req.Region.ID == regionId);
-            return request != null && RemoveRequest(request.Region, user, true);
-        }
-
-        public bool ApproveRequest(UserAccount user, Region region)
-        {
-            var request = _requestManagerProvider()?.Requests.FirstOrDefault(req => req.Region.ID == region.ID);
-            return request != null && RemoveRequest(request.Region, user, true);
-        }
-
-        public bool DenyRequest(UserAccount user, int regionId)
-        {
-            var request = _requestManagerProvider()?.Requests.FirstOrDefault(req => req.Region.ID == regionId);
-            return request != null && RemoveRequest(request.Region, user, false);
-        }
-
-        public bool DenyRequest(UserAccount user, Region region)
-        {
-            var request = _requestManagerProvider()?.Requests.FirstOrDefault(req => req.Region.ID == region.ID);
-            return request != null && RemoveRequest(request.Region, user, false);
-        }
-
-        public bool RemoveRequest(Region region, UserAccount user, bool approved)
-        {
-            if (region == null)
-                return false;
-
-            var requestManager = _requestManagerProvider();
-            if (requestManager == null)
-                return false;
-
-            var request = requestManager.Requests.FirstOrDefault(r => r.Region.ID == region.ID);
-            if (request == null)
-                return false;
-
-            var result = requestManager.DeleteRequest(region);
-            if (!result)
-                return false;
-
-            if (!approved && TShock.Regions.Regions.Any(r => request.Region.ID == r.ID))
-                TShock.Regions.DeleteRegion(request.Region.ID);
-
             return true;
         }
 

@@ -1,6 +1,5 @@
 using RegionExtension.Commands;
 using RegionExtension.Commands.Parameters;
-using RegionExtension.Database.Modules;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -19,17 +18,13 @@ namespace RegionExtension.Database
         private readonly RegionRuntimeService _runtimeService;
 
         private RegionServices _services;
-        private IRegionRequestManager _requestManager;
-        private IRegionTriggerManager _triggerManager;
-        private IRegionPropertyManager _propertyManager;
         private bool _fullyLoaded;
+
+        public event EventHandler<RegionOperationEventArgs> RegionOperation;
 
         public RegionHistoryManager HistoryManager => _services?.HistoryManager;
         public DeletedRegionsDB DeletedRegions => _services?.DeletedRegions;
         public RegionInfoManager InfoManager => _services?.InfoManager;
-        public IRegionRequestManager RegionRequestManager => _requestManager;
-        public IRegionTriggerManager TriggerManager => _triggerManager;
-        public IRegionPropertyManager PropertyManager => _propertyManager;
 
         public RegionExtManager(IDbConnection db, DatabaseRepositoryFactory databaseRepositoryFactory = null, PluginContext context = null)
         {
@@ -39,16 +34,8 @@ namespace RegionExtension.Database
                 _tshockDatabase,
                 () => InfoManager,
                 () => HistoryManager,
-                () => DeletedRegions,
-                () => RegionRequestManager,
-                () => TriggerManager,
-                () => PropertyManager);
-            _runtimeService = new RegionRuntimeService(
-                context ?? new PluginContext(),
-                () => RegionRequestManager,
-                () => TriggerManager,
-                () => PropertyManager,
-                _domainService.RemoveRequest);
+                () => DeletedRegions);
+            _runtimeService = new RegionRuntimeService(context ?? new PluginContext());
         }
 
         public void PostInitialize(TerrariaPlugin plugin)
@@ -65,9 +52,6 @@ namespace RegionExtension.Database
             {
                 _services?.Connection?.Dispose();
                 _services = _bootstrapper.Initialize();
-                _requestManager = null;
-                _triggerManager = null;
-                _propertyManager = null;
 
                 TShock.Log.Info("Info manager loaded.");
                 TShock.Log.Info("History manager loaded.");
@@ -85,109 +69,117 @@ namespace RegionExtension.Database
             }
         }
 
-        public bool AttachRequestManager(IRegionRequestManager requestManager)
-        {
-            if (!_fullyLoaded || requestManager == null)
-                return false;
-            _requestManager = requestManager;
-            return true;
-        }
-
-        public void DetachRequestManager(IRegionRequestManager requestManager = null)
-        {
-            if (requestManager != null && !ReferenceEquals(_requestManager, requestManager))
-                return;
-            _requestManager = null;
-        }
-
-        public bool AttachTriggerManagers(IRegionTriggerManager triggerManager, IRegionPropertyManager propertyManager)
-        {
-            if (!_fullyLoaded || triggerManager == null || propertyManager == null)
-                return false;
-            _triggerManager = triggerManager;
-            _propertyManager = propertyManager;
-            return true;
-        }
-
-        public void DetachTriggerManagers(IRegionTriggerManager triggerManager = null, IRegionPropertyManager propertyManager = null)
-        {
-            if (triggerManager != null && !ReferenceEquals(_triggerManager, triggerManager))
-                return;
-            if (propertyManager != null && !ReferenceEquals(_propertyManager, propertyManager))
-                return;
-            _propertyManager = null;
-            _triggerManager = null;
-        }
-
         public void Dispose(TerrariaPlugin plugin)
         {
-            _requestManager = null;
-            _triggerManager = null;
-            _propertyManager = null;
             _services?.Connection?.Dispose();
             _services = null;
             _fullyLoaded = false;
         }
 
         public bool RenameRegion(CommandArgsExtension args, Region region, string newName) =>
-            _domainService.RenameRegion(args, region, newName);
+            ExecuteWithEvents(
+                RegionOperationKind.Rename,
+                args?.Player,
+                region,
+                () => _domainService.RenameRegion(args, region, newName),
+                ("newName", newName));
 
         public bool MoveRegion(CommandArgsExtension args, Region region, int amount, Direction direction) =>
-            _domainService.MoveRegion(args, region, amount, direction);
+            ExecuteWithEvents(
+                RegionOperationKind.Move,
+                args?.Player,
+                region,
+                () => _domainService.MoveRegion(args, region, amount, direction),
+                ("amount", amount),
+                ("direction", direction));
 
         public bool AllowUser(CommandArgsExtension args, Region region, UserAccount account) =>
-            _domainService.AllowUser(args, region, account);
+            ExecuteWithEvents(
+                RegionOperationKind.AllowUser,
+                args?.Player,
+                region,
+                () => _domainService.AllowUser(args, region, account),
+                ("userId", account?.ID),
+                ("userName", account?.Name));
 
         public bool RemoveUser(CommandArgsExtension args, Region region, UserAccount account) =>
-            _domainService.RemoveUser(args, region, account);
+            ExecuteWithEvents(
+                RegionOperationKind.RemoveUser,
+                args?.Player,
+                region,
+                () => _domainService.RemoveUser(args, region, account),
+                ("userId", account?.ID),
+                ("userName", account?.Name));
 
         public bool AllowGroup(CommandArgsExtension args, Region region, Group group) =>
-            _domainService.AllowGroup(args, region, group);
+            ExecuteWithEvents(
+                RegionOperationKind.AllowGroup,
+                args?.Player,
+                region,
+                () => _domainService.AllowGroup(args, region, group),
+                ("group", group?.Name));
 
         public bool RemoveGroup(CommandArgsExtension args, Region region, Group group) =>
-            _domainService.RemoveGroup(args, region, group);
+            ExecuteWithEvents(
+                RegionOperationKind.RemoveGroup,
+                args?.Player,
+                region,
+                () => _domainService.RemoveGroup(args, region, group),
+                ("group", group?.Name));
 
         public bool SetZ(CommandArgsExtension args, Region region, int amount) =>
-            _domainService.SetZ(args, region, amount);
+            ExecuteWithEvents(
+                RegionOperationKind.SetZ,
+                args?.Player,
+                region,
+                () => _domainService.SetZ(args, region, amount),
+                ("z", amount));
 
         public bool Protect(CommandArgsExtension args, Region region, bool protect) =>
-            _domainService.Protect(args, region, protect);
+            ExecuteWithEvents(
+                RegionOperationKind.Protect,
+                args?.Player,
+                region,
+                () => _domainService.Protect(args, region, protect),
+                ("protect", protect));
 
         public bool Resize(CommandArgsExtension args, Region region, int amount, int direction) =>
-            _domainService.Resize(args, region, amount, direction);
+            ExecuteWithEvents(
+                RegionOperationKind.Resize,
+                args?.Player,
+                region,
+                () => _domainService.Resize(args, region, amount, direction),
+                ("amount", amount),
+                ("direction", direction));
 
         public bool ChangeOwner(CommandArgsExtension args, Region region, UserAccount account) =>
-            _domainService.ChangeOwner(args, region, account);
+            ExecuteWithEvents(
+                RegionOperationKind.ChangeOwner,
+                args?.Player,
+                region,
+                () => _domainService.ChangeOwner(args, region, account),
+                ("ownerId", account?.ID),
+                ("ownerName", account?.Name));
 
         public bool DeleteRegion(CommandArgsExtension args, Region region) =>
-            DeleteRegion(args.Player, region);
+            DeleteRegion(args?.Player, region);
 
         public bool DeleteRegion(TSPlayer user, Region region) =>
-            _domainService.DeleteRegion(user, region);
+            ExecuteWithEvents(
+                RegionOperationKind.Delete,
+                user,
+                region,
+                () => _domainService.DeleteRegion(user, region));
 
         public bool DefineRegion(CommandArgsExtension args, Region region) =>
-            DefineRegion(args.Player, region);
+            DefineRegion(args?.Player, region);
 
         public bool DefineRegion(TSPlayer user, Region region) =>
-            _domainService.DefineRegion(user, region);
-
-        public bool CreateRequest(Region region, TSPlayer user) =>
-            _domainService.CreateRequest(region, user);
-
-        public bool ApproveRequest(UserAccount user, int regionId) =>
-            _domainService.ApproveRequest(user, regionId);
-
-        public bool ApproveRequest(UserAccount user, Region region) =>
-            _domainService.ApproveRequest(user, region);
-
-        public bool DenyRequest(UserAccount user, int regionId) =>
-            _domainService.DenyRequest(user, regionId);
-
-        public bool DenyRequest(UserAccount user, Region region) =>
-            _domainService.DenyRequest(user, region);
-
-        public bool RemoveRequest(Region region, UserAccount user, bool approved) =>
-            _domainService.RemoveRequest(region, user, approved);
+            ExecuteWithEvents(
+                RegionOperationKind.Define,
+                user,
+                region,
+                () => _domainService.DefineRegion(user, region));
 
         public void Update()
         {
@@ -220,6 +212,60 @@ namespace RegionExtension.Database
             }
 
             _runtimeService.Reload(e);
+        }
+
+        private bool ExecuteWithEvents(
+            RegionOperationKind operation,
+            TSPlayer executor,
+            Region region,
+            Func<bool> operationDelegate,
+            params (string key, object value)[] metadata)
+        {
+            if (!_fullyLoaded)
+                return false;
+
+            var beforeArgs = new RegionOperationEventArgs(
+                operation,
+                RegionOperationStage.Before,
+                executor,
+                region,
+                BuildMetadata(metadata));
+            RegionOperation?.Invoke(this, beforeArgs);
+            if (beforeArgs.Cancel)
+            {
+                if (executor != null && !string.IsNullOrWhiteSpace(beforeArgs.CancelReason))
+                    executor.SendErrorMessage(beforeArgs.CancelReason);
+                return false;
+            }
+
+            var result = operationDelegate();
+            if (!result)
+                return false;
+
+            var afterArgs = new RegionOperationEventArgs(
+                operation,
+                RegionOperationStage.After,
+                executor,
+                region,
+                BuildMetadata(metadata));
+            RegionOperation?.Invoke(this, afterArgs);
+            return true;
+        }
+
+        private static Dictionary<string, object> BuildMetadata((string key, object value)[] metadata)
+        {
+            var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (metadata == null)
+                return result;
+
+            foreach (var entry in metadata)
+            {
+                if (string.IsNullOrWhiteSpace(entry.key))
+                    continue;
+                result[entry.key] = entry.value;
+            }
+
+            return result;
         }
     }
 }

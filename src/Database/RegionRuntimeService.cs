@@ -1,21 +1,14 @@
 using Microsoft.Xna.Framework;
-using RegionExtension.Database.Modules;
 using System;
 using System.Collections.Generic;
 using TShockAPI;
-using TShockAPI.DB;
 using TShockAPI.Hooks;
 
 namespace RegionExtension.Database
 {
     internal sealed class RegionRuntimeService
     {
-        public RegionRuntimeService(
-            PluginContext context,
-            Func<IRegionRequestManager> requestManagerProvider,
-            Func<IRegionTriggerManager> triggerManagerProvider,
-            Func<IRegionPropertyManager> propertyManagerProvider,
-            Func<Region, UserAccount, bool, bool> removeRequest)
+        public RegionRuntimeService(PluginContext context)
         {
         }
 
