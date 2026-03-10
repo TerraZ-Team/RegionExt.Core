@@ -253,20 +253,20 @@ namespace RegionExtension.Infrastructure
 
         private void HandleItemDropOperation(GetDataEventArgs args)
         {
-            if (!PacketViewParser.TryParsePayload((MultiplicityPacketTypes)(byte)args.MsgID, args.Msg.readBuffer, args.Index, args.Length, out var packetView))
+            const int worldItemSyncPayloadLength = 24;
+            if (args.Length < worldItemSyncPayloadLength)
                 return;
 
-            if (packetView.PayloadSpan.Length < 20)
+            // NetGetData may include one trailing byte here; TShock itself only consumes the stable 24-byte prefix.
+            if (!PacketViewParser.TryParsePayload((MultiplicityPacketTypes)(byte)args.MsgID, args.Msg.readBuffer, args.Index, worldItemSyncPayloadLength, out var packetView))
                 return;
 
-            var reader = packetView.CreatePayloadReader();
-            int id = reader.ReadInt16();
+            var view = new WorldItemSyncView(packetView);
+            int id = view.ItemIndex;
             var rewrites = ItemRewriteRegistry.Rewrites;
             if (id >= Main.maxItems || rewrites[id] == null || !rewrites[id].Active)
                 return;
-
-            reader.Skip(16);
-            if (reader.ReadInt16() == 0)
+            if (view.Stack == 0)
                 rewrites[id].Active = false;
         }
 
