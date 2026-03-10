@@ -256,12 +256,17 @@ namespace RegionExtension.Infrastructure
             if (!PacketViewParser.TryParsePayload((MultiplicityPacketTypes)(byte)args.MsgID, args.Msg.readBuffer, args.Index, args.Length, out var packetView))
                 return;
 
-            var view = new WorldItemSyncView(packetView);
-            int id = view.ItemIndex;
+            if (packetView.PayloadSpan.Length < 20)
+                return;
+
+            var reader = packetView.CreatePayloadReader();
+            int id = reader.ReadInt16();
             var rewrites = ItemRewriteRegistry.Rewrites;
             if (id >= Main.maxItems || rewrites[id] == null || !rewrites[id].Active)
                 return;
-            if (view.Stack == 0)
+
+            reader.Skip(16);
+            if (reader.ReadInt16() == 0)
                 rewrites[id].Active = false;
         }
 
