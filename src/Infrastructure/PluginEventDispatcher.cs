@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using RegionExtension.Commands.Parameters;
 using RegionExtension.Database;
+using Multiplicity.Packets.Views;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.ID;
@@ -11,6 +11,7 @@ using TerrariaApi.Server;
 using TShockAPI;
 using TShockAPI.DB;
 using TShockAPI.Hooks;
+using MultiplicityPacketTypes = Multiplicity.Packets.PacketTypes;
 
 namespace RegionExtension.Infrastructure
 {
@@ -213,17 +214,20 @@ namespace RegionExtension.Infrastructure
             if (!TryGetFastRegionIndex(args.Msg.whoAmI, out var id))
                 return;
 
-            using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
-            {
-                int startX = reader.ReadInt16();
-                int startY = reader.ReadInt16();
-                int endX = reader.ReadInt16();
-                int endY = reader.ReadInt16();
-                if (!IsInWorldBounds(startX, startY) || !IsInWorldBounds(endX, endY))
-                    return;
-                if (_context.FastRegions[id].SetPoints(startX, startY, endX, endY))
-                    _context.FastRegions.RemoveAt(id);
-            }
+            if (!PacketViewParser.TryParsePayload(MultiplicityPacketTypes.MassWireOperation, args.Msg.readBuffer, args.Index, args.Length, out var packetView))
+                return;
+
+            var reader = packetView.CreatePayloadReader();
+            int startX = reader.ReadInt16();
+            int startY = reader.ReadInt16();
+            int endX = reader.ReadInt16();
+            int endY = reader.ReadInt16();
+            reader.Skip(1);
+            reader.EnsureEnd();
+            if (!IsInWorldBounds(startX, startY) || !IsInWorldBounds(endX, endY))
+                return;
+            if (_context.FastRegions[id].SetPoints(startX, startY, endX, endY))
+                _context.FastRegions.RemoveAt(id);
 
             args.Handled = true;
         }
@@ -233,30 +237,31 @@ namespace RegionExtension.Infrastructure
             if (!TryGetFastRegionIndex(args.Msg.whoAmI, out var id))
                 return;
 
-            using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
-            {
-                reader.ReadByte();
-                int x = reader.ReadInt16();
-                int y = reader.ReadInt16();
-                if (!IsInWorldBounds(x, y))
-                    return;
-                if (_context.FastRegions[id].SetPoint(x, y))
-                    _context.FastRegions.RemoveAt(id);
-            }
+            if (!PacketViewParser.TryParsePayload(MultiplicityPacketTypes.Tile, args.Msg.readBuffer, args.Index, args.Length, out var packetView))
+                return;
+
+            var view = new TileView(packetView);
+            int x = view.TileX;
+            int y = view.TileY;
+            if (!IsInWorldBounds(x, y))
+                return;
+            if (_context.FastRegions[id].SetPoint(x, y))
+                _context.FastRegions.RemoveAt(id);
 
             args.Handled = true;
         }
 
         private void HandleItemDropOperation(GetDataEventArgs args)
         {
-            using var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length));
-            int id = reader.ReadInt16();
+            if (!PacketViewParser.TryParsePayload((MultiplicityPacketTypes)(byte)args.MsgID, args.Msg.readBuffer, args.Index, args.Length, out var packetView))
+                return;
+
+            var view = new WorldItemSyncView(packetView);
+            int id = view.ItemIndex;
             var rewrites = ItemRewriteRegistry.Rewrites;
             if (id >= Main.maxItems || rewrites[id] == null || !rewrites[id].Active)
                 return;
-            reader.BaseStream.Seek(13, SeekOrigin.Begin);
-            int stack = reader.ReadInt16();
-            if (stack == 0)
+            if (view.Stack == 0)
                 rewrites[id].Active = false;
         }
 
