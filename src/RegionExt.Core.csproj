@@ -8,7 +8,7 @@
     <RootNamespace>RegionExtension</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="TZ.Multiplicity" Version="2.3.0" />
+    <PackageReference Include="TZ.Multiplicity" Version="2.4.0" />
     <PackageReference Include="TZ.TShockAPI" Version="6.0.0" />
   </ItemGroup>
 </Project>

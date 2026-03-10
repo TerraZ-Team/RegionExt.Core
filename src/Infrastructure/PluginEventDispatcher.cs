@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Multiplicity.Packets;
 using RegionExtension.Commands.Parameters;
 using RegionExtension.Database;
 using Multiplicity.Packets.Views;
@@ -253,12 +254,15 @@ namespace RegionExtension.Infrastructure
 
         private void HandleItemDropOperation(GetDataEventArgs args)
         {
-            const int worldItemSyncPayloadLength = 24;
-            if (args.Length < worldItemSyncPayloadLength)
+            if (!PacketViewParser.TryParsePayload(
+                    (MultiplicityPacketTypes)(byte)args.MsgID,
+                    args.Msg.readBuffer,
+                    args.Index,
+                    out var packetView,
+                    out int consumed))
                 return;
 
-            // NetGetData may include one trailing byte here; TShock itself only consumes the stable 24-byte prefix.
-            if (!PacketViewParser.TryParsePayload((MultiplicityPacketTypes)(byte)args.MsgID, args.Msg.readBuffer, args.Index, worldItemSyncPayloadLength, out var packetView))
+            if (consumed < TerrariaPacket.GetDefaultPayloadLength((MultiplicityPacketTypes)(byte)args.MsgID))
                 return;
 
             var view = new WorldItemSyncView(packetView);
