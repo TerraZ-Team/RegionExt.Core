@@ -150,8 +150,9 @@ namespace RegionExtension.Database
         private void RegisterRegionDeletion(TSPlayer user, Region region)
         {
             var infoManager = _infoManagerProvider();
-            var info = infoManager?.RegionsInfo.FirstOrDefault(reg => reg.Id == region.ID)
-                       ?? new RegionExtensionInfo(region.ID, user?.Account?.ID ?? 0);
+            var info = infoManager != null && infoManager.TryGetRegionInfo(region.ID, out var loadedInfo)
+                ? loadedInfo
+                : new RegionExtensionInfo(region.ID, user?.Account?.ID ?? 0);
 
             _deletedRegionsProvider()?.RegisterDeletedRegion(region, user?.Account, info);
             infoManager?.RemoveRegion(region.ID);

@@ -8,6 +8,6 @@
     <RootNamespace>RegionExtension</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="TShockAPI.TZ" Version="6.0.0.3" />
+    <PackageReference Include="TZ.TShockAPI" Version="6.0.0" />
   </ItemGroup>
 </Project>

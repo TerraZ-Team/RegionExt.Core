@@ -1,38 +1,36 @@
-using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using TShockAPI.DB;
-using TShockAPI;
+using MySql.Data.MySqlClient;
 using RegionExtension.Database.Actions;
-using TShockAPI.Hooks;
+using TShockAPI;
+using TShockAPI.DB;
 
 namespace RegionExtension.Database
 {
-    public class RegionHistoryManager
+    public sealed class RegionHistoryManager : IDisposable
     {
-        private IDbConnection _database;
-        private Dictionary<int, Stack<ActionInfo>> _redoActions = new Dictionary<int, Stack<ActionInfo>>();
+        private readonly IDbConnection _database;
+        private readonly BackgroundDbWriteQueue _writeQueue;
+        private readonly Dictionary<int, Stack<ActionInfo>> _redoActions = new();
 
-        private SqlTable _table =
-            new SqlTable("RegionHistory",
-                         new SqlColumn(TableHistoryInfo.Id.ToString(), MySqlDbType.Int32) { Primary = true, AutoIncrement = true },
-                         new SqlColumn(TableHistoryInfo.RegionId.ToString(), MySqlDbType.Int32),
-                         new SqlColumn(TableHistoryInfo.UserId.ToString(), MySqlDbType.Int32),
-                         new SqlColumn(TableHistoryInfo.ActionName.ToString(), MySqlDbType.Text),
-                         new SqlColumn(TableHistoryInfo.Args.ToString(), MySqlDbType.Text),
-                         new SqlColumn(TableHistoryInfo.UndoArgs.ToString(), MySqlDbType.Text),
-                         new SqlColumn(TableHistoryInfo.DateTime.ToString(), MySqlDbType.Int64)
-                         );
+        private readonly SqlTable _table =
+            new("RegionHistory",
+                 new SqlColumn(TableHistoryInfo.Id.ToString(), MySqlDbType.Int32) { Primary = true, AutoIncrement = true },
+                 new SqlColumn(TableHistoryInfo.RegionId.ToString(), MySqlDbType.Int32),
+                 new SqlColumn(TableHistoryInfo.UserId.ToString(), MySqlDbType.Int32),
+                 new SqlColumn(TableHistoryInfo.ActionName.ToString(), MySqlDbType.Text),
+                 new SqlColumn(TableHistoryInfo.Args.ToString(), MySqlDbType.Text),
+                 new SqlColumn(TableHistoryInfo.UndoArgs.ToString(), MySqlDbType.Text),
+                 new SqlColumn(TableHistoryInfo.DateTime.ToString(), MySqlDbType.Int64));
 
-        public List<RegionExtensionInfo> RegionsInfo { get; private set; }
-
-        public RegionHistoryManager(IDbConnection db)
+        public RegionHistoryManager(IDbConnection db, Func<IDbConnection> writeConnectionFactory)
         {
             _database = db;
+            _writeQueue = new BackgroundDbWriteQueue(
+                writeConnectionFactory ?? throw new ArgumentNullException(nameof(writeConnectionFactory)),
+                "RegionExt.Core.History");
             InitializeTable();
         }
 
@@ -44,18 +42,20 @@ namespace RegionExtension.Database
 
         public void SaveAction(IAction action, Region region, UserAccount user, DateTime dateTime, bool clearRedo = true)
         {
-            
             var name = action.Name;
             var args = action.GetArgsString();
             var undoArgs = action.GetUndoArgsString();
             var regionId = region.ID;
-            var userId = user == null ? 0 : user.ID;
+            var userId = user?.ID ?? 0;
+
             if (_redoActions.ContainsKey(regionId) && clearRedo)
                 _redoActions.Remove(regionId);
-            DbSafe.Execute("Save region action", () =>
+
+            _writeQueue.TryEnqueue(connection =>
             {
                 var variablesString = string.Join(", ", _table.Columns.Select(c => c.Name).Where(s => s != TableHistoryInfo.Id.ToString()));
-                _database.Query($"INSERT INTO {_table.Name} ({variablesString}) VALUES (@0, @1, @2, @3, @4, @5);",
+                connection.Query(
+                    $"INSERT INTO {_table.Name} ({variablesString}) VALUES (@0, @1, @2, @3, @4, @5);",
                     regionId,
                     userId,
                     name,
@@ -72,31 +72,13 @@ namespace RegionExtension.Database
 
         public bool Undo(int count, int regionId)
         {
-            var actions = new List<ActionInfo>();
-            if (!DbSafe.Execute("Load history for undo", () =>
-            {
-                using (var reader = _database.QueryReader($"SELECT * FROM {_table.Name} WHERE RegionId=@0", regionId))
-                {
-                    while (reader.Read())
-                    {
-                        var id = reader.Get<int>(_table.Columns[0].Name);
-                        regionId = reader.Get<int>(_table.Columns[1].Name);
-                        var userId = reader.Get<int>(_table.Columns[2].Name);
-                        var actionName = reader.Get<string>(_table.Columns[3].Name);
-                        var args = reader.Get<string>(_table.Columns[4].Name);
-                        var undoArgs = reader.Get<string>(_table.Columns[5].Name);
-                        var dateTime = DateTimeCodec.FromUnixMilliseconds(reader.Get<long>(_table.Columns[6].Name));
-                        var action = ActionFactory.GetActionByName(actionName, args);
-                        actions.Add(new ActionInfo(id, action, regionId, userId, dateTime, undoArgs));
-                    }
-                }
-                return true;
-            }))
-            {
+            _writeQueue.Flush();
+
+            var actions = LoadActions(regionId);
+            if (actions == null)
                 return false;
-            }
-            var sortedActions = actions.OrderBy(a => a.Date).Reverse();
-            foreach(var action in sortedActions)
+
+            foreach (var action in actions.OrderBy(a => a.Date).Reverse())
             {
                 var undoAction = action.Action.GetUndoAction(action.UndoStr);
                 if (!_redoActions.ContainsKey(action.RegionId))
@@ -108,57 +90,80 @@ namespace RegionExtension.Database
                 if (count < 1)
                     break;
             }
+
             return true;
         }
 
         public List<string> GetActionsInfo(int count, int regionId)
         {
-            var actions = new List<ActionInfo>();
-            var info = new List<string>();
-            if (!DbSafe.Execute("Load history info", () =>
-            {
-                using (var reader = _database.QueryReader($"SELECT * FROM {_table.Name} WHERE RegionId=@0", regionId))
-                {
-                    while (reader.Read())
-                    {
-                        var id = reader.Get<int>(_table.Columns[0].Name);
-                        regionId = reader.Get<int>(_table.Columns[1].Name);
-                        var userId = reader.Get<int>(_table.Columns[2].Name);
-                        var actionName = reader.Get<string>(_table.Columns[3].Name);
-                        var args = reader.Get<string>(_table.Columns[4].Name);
-                        var undoArgs = reader.Get<string>(_table.Columns[5].Name);
-                        var dateTime = DateTimeCodec.FromUnixMilliseconds(reader.Get<long>(_table.Columns[6].Name));
-                        var action = ActionFactory.GetActionByName(actionName, args);
-                        actions.Add(new ActionInfo(id, action, regionId, userId, dateTime, undoArgs));
-                    }
-                }
-                return true;
-            }))
-            {
+            _writeQueue.Flush();
+
+            var actions = LoadActions(regionId);
+            if (actions == null)
                 return null;
-            }
-            info = actions.OrderBy(a => a.Date)
+
+            return actions.OrderBy(a => a.Date)
                           .Reverse()
-                          .Select(a => string.Join(' ',
-                                       a.Date.ToString(Utils.DateFormat),
-                                       a.UserId == 0 ? "Server" : TShock.UserAccounts.GetUserAccountByID(a.UserId).Name,
-                                       string.Join(' ', a.Action.GetInfoString())))
+                          .Take(count)
+                          .Select(a =>
+                          {
+                              var user = a.UserId == 0 ? null : TShock.UserAccounts.GetUserAccountByID(a.UserId);
+                              var userName = user?.Name ?? "Server";
+                              return string.Join(' ',
+                                  a.Date.ToString(Utils.DateFormat),
+                                  userName,
+                                  string.Join(' ', a.Action.GetInfoString()));
+                          })
                           .ToList();
-            return info;
         }
 
         public void Redo(int count, int regionId)
         {
-            if(_redoActions.ContainsKey(regionId))
+            if (!_redoActions.ContainsKey(regionId))
+                return;
+
+            while (count > 0 && _redoActions[regionId].Count > 0)
             {
-                while(count > 0 && _redoActions[regionId].Count > 0)
-                {
-                    count--;
-                    var actionInfo = _redoActions[regionId].Pop();
-                    SaveAction(actionInfo.Action, TShock.Regions.GetRegionByID(regionId), TShock.UserAccounts.GetUserAccountByID(actionInfo.UserId), actionInfo.Date, false);
-                    actionInfo.Action.Do();
-                }
+                count--;
+                var actionInfo = _redoActions[regionId].Pop();
+                SaveAction(
+                    actionInfo.Action,
+                    TShock.Regions.GetRegionByID(regionId),
+                    TShock.UserAccounts.GetUserAccountByID(actionInfo.UserId),
+                    actionInfo.Date,
+                    false);
+                actionInfo.Action.Do();
             }
+        }
+
+        public void Dispose()
+        {
+            _writeQueue.Flush();
+            _writeQueue.Dispose();
+        }
+
+        private List<ActionInfo> LoadActions(int regionId)
+        {
+            return DbSafe.Read("Load history", () =>
+            {
+                var actions = new List<ActionInfo>();
+                using var reader = _database.QueryReader($"SELECT * FROM {_table.Name} WHERE RegionId=@0", regionId);
+                while (reader.Read())
+                {
+                    var id = reader.Get<int>(_table.Columns[0].Name);
+                    var loadedRegionId = reader.Get<int>(_table.Columns[1].Name);
+                    var userId = reader.Get<int>(_table.Columns[2].Name);
+                    var actionName = reader.Get<string>(_table.Columns[3].Name);
+                    var args = reader.Get<string>(_table.Columns[4].Name);
+                    var undoArgs = reader.Get<string>(_table.Columns[5].Name);
+                    var dateTime = DateTimeCodec.FromUnixMilliseconds(reader.Get<long>(_table.Columns[6].Name));
+                    var action = ActionFactory.GetActionByName(actionName, args);
+                    if (action != null)
+                        actions.Add(new ActionInfo(id, action, loadedRegionId, userId, dateTime, undoArgs));
+                }
+
+                return actions;
+            });
         }
 
         private enum TableHistoryInfo
@@ -173,7 +178,7 @@ namespace RegionExtension.Database
         }
     }
 
-    public class ActionDBInfo
+    public sealed class ActionDBInfo
     {
         public int RegionId { get; set; }
         public int UserId { get; set; }
@@ -183,7 +188,7 @@ namespace RegionExtension.Database
         public DateTime DateTime { get; set; }
     }
 
-    public class ActionInfo 
+    public sealed class ActionInfo
     {
         public ActionInfo(int id, IAction action, int regionId, int userId, DateTime date, string undoStr)
         {
@@ -203,4 +208,3 @@ namespace RegionExtension.Database
         public DateTime Date { get; }
     }
 }
-

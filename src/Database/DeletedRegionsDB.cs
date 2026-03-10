@@ -13,9 +13,10 @@ using TShockAPI.Hooks;
 
 namespace RegionExtension.Database
 {
-    public class DeletedRegionsDB
+    public sealed class DeletedRegionsDB : IDisposable
     {
-        private IDbConnection _database;
+        private readonly IDbConnection _database;
+        private readonly BackgroundDbWriteQueue _writeQueue;
 
         private List<DeletedInfo> _deletedInfo = new List<DeletedInfo>();
 
@@ -38,9 +39,12 @@ namespace RegionExtension.Database
                  new SqlColumn(TableInfo.DeletionDate.ToString(), MySqlDbType.Int64)
                  );
 
-        public DeletedRegionsDB(IDbConnection db)
+        public DeletedRegionsDB(IDbConnection db, Func<IDbConnection> writeConnectionFactory)
         {
             _database = db;
+            _writeQueue = new BackgroundDbWriteQueue(
+                writeConnectionFactory ?? throw new ArgumentNullException(nameof(writeConnectionFactory)),
+                "RegionExt.Core.DeletedRegions");
             InitializeTable();
         }
 
@@ -53,32 +57,49 @@ namespace RegionExtension.Database
 
         public bool RegisterDeletedRegion(Region region, UserAccount userDeleter, RegionExtensionInfo info)
         {
-            return DbSafe.Execute("Register deleted region", () =>
+            var deleterId = userDeleter?.ID ?? 0;
+            var deleterName = userDeleter?.Name ?? "Server";
+            while (_deletedInfo.Any(r => r.RegionExt.Region.ID == region.ID))
+                region.ID++;
+
+            var deletionDate = DateTime.UtcNow;
+            var snapshot = new DeletedRegionRecord(
+                region.ID,
+                deleterId,
+                region.WorldID,
+                region.Name,
+                region.Area.X,
+                region.Area.Y,
+                region.Area.Width,
+                region.Area.Height,
+                string.Join(',', region.AllowedIDs),
+                region.DisableBuild ? 1 : 0,
+                string.Join(' ', region.AllowedGroups),
+                region.Owner,
+                region.Z,
+                DateTimeCodec.ToUnixMilliseconds(info.DateCreation),
+                DateTimeCodec.ToUnixMilliseconds(deletionDate));
+
+            _deletedInfo.Add(new DeletedInfo(new RegionExtended() { Region = region, ExtensionInfo = info }, deletionDate, deleterName));
+            return _writeQueue.TryEnqueue(connection =>
             {
-                var deleterId = userDeleter?.ID ?? 0;
-                var deleterName = userDeleter?.Name ?? "Server";
-                while (RegionIdExists(region.ID))
-                    region.ID++;
                 string query = $"INSERT INTO {_table.Name} (RegionId, DeleterId, WorldId, RegionName, X, Y, Width, Height, UserIds, Protected, `Groups`, Owner, Z, CreationDate, DeletionDate) VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12, @13, @14);";
-                _database.Query(query,
-                    region.ID,
-                    deleterId,
-                    region.WorldID,
-                    region.Name,
-                    region.Area.X,
-                    region.Area.Y,
-                    region.Area.Width,
-                    region.Area.Height,
-                    string.Join(',', region.AllowedIDs),
-                    region.DisableBuild ? 1 : 0,
-                    string.Join(' ', region.AllowedGroups),
-                    region.Owner,
-                    region.Z,
-                    DateTimeCodec.ToUnixMilliseconds(info.DateCreation),
-                    DateTimeCodec.ToUnixMilliseconds(DateTime.UtcNow)
-                );
-                _deletedInfo.Add(new DeletedInfo(new RegionExtended() { Region = region, ExtensionInfo = info }, DateTime.UtcNow, deleterName));
-                return true;
+                connection.Query(query,
+                    snapshot.RegionId,
+                    snapshot.DeleterId,
+                    snapshot.WorldId,
+                    snapshot.RegionName,
+                    snapshot.X,
+                    snapshot.Y,
+                    snapshot.Width,
+                    snapshot.Height,
+                    snapshot.UserIds,
+                    snapshot.Protected,
+                    snapshot.Groups,
+                    snapshot.Owner,
+                    snapshot.Z,
+                    snapshot.CreationDate,
+                    snapshot.DeletionDate);
             });
         }
 
@@ -124,12 +145,9 @@ namespace RegionExtension.Database
 
         public bool RemoveRegionFromDeleted(int regionId)
         {
-            return DbSafe.Execute("Remove deleted region", () =>
-            {
-                _database.Query($"DELETE FROM {_table.Name} WHERE RegionId=@0", regionId);
-                _deletedInfo.RemoveAll(r => r.RegionExt.Region.ID == regionId);
-                return true;
-            });
+            _deletedInfo.RemoveAll(r => r.RegionExt.Region.ID == regionId);
+            return _writeQueue.TryEnqueue(connection =>
+                connection.Query($"DELETE FROM {_table.Name} WHERE RegionId=@0", regionId));
         }
 
         public RegionExtended GetRegionByName(string regionName)
@@ -145,10 +163,10 @@ namespace RegionExtension.Database
                         .Select(r => r.RegionExt)
                         .ToList();
 
-        private bool RegionIdExists(int regionId)
+        public void Dispose()
         {
-            using (var reader = _database.QueryReader($"SELECT RegionId FROM {_table.Name} WHERE RegionId=@0 LIMIT 1", regionId))
-                return reader.Read();
+            _writeQueue.Flush();
+            _writeQueue.Dispose();
         }
 
         public enum TableInfo
@@ -170,6 +188,24 @@ namespace RegionExtension.Database
             DeletionDate
         }
     }
+
+    internal readonly record struct DeletedRegionRecord(
+        int RegionId,
+        int DeleterId,
+        string WorldId,
+        string RegionName,
+        int X,
+        int Y,
+        int Width,
+        int Height,
+        string UserIds,
+        int Protected,
+        string Groups,
+        string Owner,
+        int Z,
+        long CreationDate,
+        long DeletionDate);
+
     public class DeletedInfo
     {
         public DeletedInfo(RegionExtended region, DateTime deletionDate, string deleterUser)

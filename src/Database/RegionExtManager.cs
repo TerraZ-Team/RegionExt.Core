@@ -15,7 +15,6 @@ namespace RegionExtension.Database
         private readonly IDbConnection _tshockDatabase;
         private readonly RegionBootstrapper _bootstrapper;
         private readonly RegionDomainService _domainService;
-        private readonly RegionRuntimeService _runtimeService;
 
         private RegionServices _services;
         private bool _fullyLoaded;
@@ -35,7 +34,6 @@ namespace RegionExtension.Database
                 () => InfoManager,
                 () => HistoryManager,
                 () => DeletedRegions);
-            _runtimeService = new RegionRuntimeService(context ?? new PluginContext());
         }
 
         public void PostInitialize(TerrariaPlugin plugin)
@@ -71,7 +69,7 @@ namespace RegionExtension.Database
 
         public void Dispose(TerrariaPlugin plugin)
         {
-            _services?.Connection?.Dispose();
+            _services?.Dispose();
             _services = null;
             _fullyLoaded = false;
         }
@@ -185,11 +183,7 @@ namespace RegionExtension.Database
         {
             if (!_fullyLoaded)
                 return;
-            _runtimeService.Update();
         }
-
-        public void SendRequestNotify(TSPlayer player, IEnumerable<string> strings) =>
-            _runtimeService.SendRequestNotify(player, strings);
 
         public List<string> GetRegionInfo(Region region) =>
             _domainService.GetRegionInfo(region);
@@ -210,8 +204,6 @@ namespace RegionExtension.Database
                 TShock.Log.Warn("[RegionExt] Reload skipped: database layer is not initialized.");
                 return;
             }
-
-            _runtimeService.Reload(e);
         }
 
         private bool ExecuteWithEvents(

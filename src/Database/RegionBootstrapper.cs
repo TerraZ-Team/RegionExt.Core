@@ -15,12 +15,14 @@ namespace RegionExtension.Database
         public RegionServices Initialize()
         {
             var connection = _databaseRepositoryFactory.CreateConnection(TShock.Config.Settings, TShock.SavePath);
+            Func<System.Data.IDbConnection> writeConnectionFactory =
+                () => _databaseRepositoryFactory.CreateConnection(TShock.Config.Settings, TShock.SavePath);
             return new RegionServices
             {
                 Connection = connection,
-                InfoManager = new RegionInfoManager(connection),
-                HistoryManager = new RegionHistoryManager(connection),
-                DeletedRegions = new DeletedRegionsDB(connection)
+                InfoManager = new RegionInfoManager(connection, writeConnectionFactory),
+                HistoryManager = new RegionHistoryManager(connection, writeConnectionFactory),
+                DeletedRegions = new DeletedRegionsDB(connection, writeConnectionFactory)
             };
         }
     }
