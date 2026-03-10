@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Multiplicity.Packets;
-using RegionExtension.Commands.Parameters;
 using RegionExtension.Database;
+using RegionExtension.Commands.Parameters;
 using Multiplicity.Packets.Views;
 using Terraria;
 using Terraria.DataStructures;
@@ -215,16 +215,14 @@ namespace RegionExtension.Infrastructure
             if (!TryGetFastRegionIndex(args.Msg.whoAmI, out var id))
                 return;
 
-            if (!PacketViewParser.TryParsePayload(MultiplicityPacketTypes.MassWireOperation, args.Msg.readBuffer, args.Index, args.Length, out var packetView))
+            if (!TryParseExactPayload(MultiplicityPacketTypes.MassWireOperation, args, out var packetView))
                 return;
 
-            var reader = packetView.CreatePayloadReader();
-            int startX = reader.ReadInt16();
-            int startY = reader.ReadInt16();
-            int endX = reader.ReadInt16();
-            int endY = reader.ReadInt16();
-            reader.Skip(1);
-            reader.EnsureEnd();
+            var view = packetView.AsMassWireOperationView();
+            int startX = view.StartX;
+            int startY = view.StartY;
+            int endX = view.EndX;
+            int endY = view.EndY;
             if (!IsInWorldBounds(startX, startY) || !IsInWorldBounds(endX, endY))
                 return;
             if (_context.FastRegions[id].SetPoints(startX, startY, endX, endY))
@@ -238,10 +236,10 @@ namespace RegionExtension.Infrastructure
             if (!TryGetFastRegionIndex(args.Msg.whoAmI, out var id))
                 return;
 
-            if (!PacketViewParser.TryParsePayload(MultiplicityPacketTypes.Tile, args.Msg.readBuffer, args.Index, args.Length, out var packetView))
+            if (!TryParseExactPayload(MultiplicityPacketTypes.Tile, args, out var packetView))
                 return;
 
-            var view = new TileView(packetView);
+            var view = packetView.AsTileView();
             int x = view.TileX;
             int y = view.TileY;
             if (!IsInWorldBounds(x, y))
@@ -254,18 +252,11 @@ namespace RegionExtension.Infrastructure
 
         private void HandleItemDropOperation(GetDataEventArgs args)
         {
-            if (!PacketViewParser.TryParsePayload(
-                    (MultiplicityPacketTypes)(byte)args.MsgID,
-                    args.Msg.readBuffer,
-                    args.Index,
-                    out var packetView,
-                    out int consumed))
+            var packetType = (MultiplicityPacketTypes)(byte)args.MsgID;
+            if (!TryParseEventPayload(packetType, args, out var packetView))
                 return;
 
-            if (consumed < TerrariaPacket.GetDefaultPayloadLength((MultiplicityPacketTypes)(byte)args.MsgID))
-                return;
-
-            var view = new WorldItemSyncView(packetView);
+            var view = packetView.AsWorldItemSyncView();
             int id = view.ItemIndex;
             var rewrites = ItemRewriteRegistry.Rewrites;
             if (id >= Main.maxItems || rewrites[id] == null || !rewrites[id].Active)
@@ -276,6 +267,28 @@ namespace RegionExtension.Infrastructure
 
         private static bool IsInWorldBounds(int x, int y) =>
             x >= 0 && y >= 0 && x < Main.maxTilesX && y < Main.maxTilesY;
+
+        private static bool TryParseExactPayload(MultiplicityPacketTypes packetType, GetDataEventArgs args, out PacketView packetView)
+        {
+            return PacketViewParser.TryParsePayload(packetType, args.Msg.readBuffer, args.Index, args.Length, out packetView);
+        }
+
+        private static bool TryParseEventPayload(MultiplicityPacketTypes packetType, GetDataEventArgs args, out PacketView packetView)
+        {
+            if (!PacketViewParser.TryParsePayload(packetType, args.Msg.readBuffer, args.Index, out packetView, out int consumed))
+            {
+                packetView = default;
+                return false;
+            }
+
+            if (consumed > args.Length)
+            {
+                packetView = default;
+                return false;
+            }
+
+            return true;
+        }
 
         private bool TryGetFastRegionIndex(int whoAmI, out int id)
         {
