@@ -215,7 +215,7 @@ namespace RegionExtension.Infrastructure
             if (!TryGetFastRegionIndex(args.Msg.whoAmI, out var id))
                 return;
 
-            if (!TryParseExactPayload(MultiplicityPacketTypes.MassWireOperation, args, out var packetView))
+            if (!TryParseBoundedPayload(MultiplicityPacketTypes.MassWireOperation, args, out var packetView))
                 return;
 
             var view = packetView.AsMassWireOperationView();
@@ -236,7 +236,7 @@ namespace RegionExtension.Infrastructure
             if (!TryGetFastRegionIndex(args.Msg.whoAmI, out var id))
                 return;
 
-            if (!TryParseExactPayload(MultiplicityPacketTypes.Tile, args, out var packetView))
+            if (!TryParseBoundedPayload(MultiplicityPacketTypes.Tile, args, out var packetView))
                 return;
 
             var view = packetView.AsTileView();
@@ -253,7 +253,7 @@ namespace RegionExtension.Infrastructure
         private void HandleItemDropOperation(GetDataEventArgs args)
         {
             var packetType = (MultiplicityPacketTypes)(byte)args.MsgID;
-            if (!TryParseEventPayload(packetType, args, out var packetView))
+            if (!TryParseBoundedPayload(packetType, args, out var packetView))
                 return;
 
             var view = packetView.AsWorldItemSyncView();
@@ -268,20 +268,15 @@ namespace RegionExtension.Infrastructure
         private static bool IsInWorldBounds(int x, int y) =>
             x >= 0 && y >= 0 && x < Main.maxTilesX && y < Main.maxTilesY;
 
-        private static bool TryParseExactPayload(MultiplicityPacketTypes packetType, GetDataEventArgs args, out PacketView packetView)
+        private static bool TryParseBoundedPayload(MultiplicityPacketTypes packetType, GetDataEventArgs args, out PacketView packetView)
         {
-            return PacketViewParser.TryParsePayload(packetType, args.Msg.readBuffer, args.Index, args.Length, out packetView);
-        }
-
-        private static bool TryParseEventPayload(MultiplicityPacketTypes packetType, GetDataEventArgs args, out PacketView packetView)
-        {
-            if (!PacketViewParser.TryParsePayload(packetType, args.Msg.readBuffer, args.Index, out packetView, out int consumed))
+            if (args.Msg.readBuffer == null || args.Index < 0 || args.Length < 0)
             {
                 packetView = default;
                 return false;
             }
 
-            if (consumed > args.Length)
+            if (!PacketViewParser.TryParsePayloadBounded(packetType, args.Msg.readBuffer, args.Index, args.Length, out packetView))
             {
                 packetView = default;
                 return false;
