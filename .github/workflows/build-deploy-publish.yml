@@ -16,7 +16,7 @@ env:
   DOTNET_VERSION: 9.0.x
   PROJECT_PATH: src/RegionExt.Core.csproj
   PACKAGE_ID: TZ.RegionExt.Core
-  NUGET_USER: kidlok
+  NUGET_USER: TerraZ
   NUGET_SOURCE: https://api.nuget.org/v3/index.json
 
 jobs:
