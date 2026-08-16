@@ -1,0 +1,180 @@
+name: Build, deploy and publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: 9.0.x
+  PROJECT_PATH: src/RegionExt.Core.csproj
+  PACKAGE_ID: TZ.RegionExt.Core
+  NUGET_USER: kidlok
+  NUGET_SOURCE: https://api.nuget.org/v3/index.json
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Resolve package version
+        if: github.ref_type == 'tag'
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid package version: $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY#*/}"
+          publish="$RUNNER_TEMP/$repo-publish"
+          artifact="$RUNNER_TEMP/$repo-artifact"
+          rm -rf "$publish" "$artifact"
+          mkdir -p "$artifact"
+
+          dotnet restore "$PROJECT_PATH"
+          dotnet build "$PROJECT_PATH" --configuration Release --no-restore
+          dotnet publish "$PROJECT_PATH" --configuration Release --no-build --output "$publish"
+
+          assembly="$(dotnet msbuild "$PROJECT_PATH" -nologo -getProperty:AssemblyName | tail -n 1 | tr -d '\r')"
+          [ -n "$assembly" ] || assembly="$(basename "$PROJECT_PATH" .csproj)"
+          test -f "$publish/$assembly.dll"
+          cp "$publish/$assembly.dll" "$artifact/$assembly.dll"
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ github.event.repository.name }}
+          path: ${{ runner.temp }}/${{ github.event.repository.name }}-artifact
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Pack NuGet package
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/nupkg"
+          rm -rf "$output"
+          mkdir -p "$output"
+          dotnet pack "$PROJECT_PATH" \
+            --configuration Release \
+            --no-build \
+            --output "$output" \
+            -p:PackageId="$PACKAGE_ID" \
+            -p:PackageVersion="${{ steps.version.outputs.value }}" \
+            -p:Authors="TerraZ-Team" \
+            -p:Description="Core plugin and API for RegionExt modules"
+
+      - name: Upload NuGet package artifact
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.PACKAGE_ID }}.${{ steps.version.outputs.value }}
+          path: ${{ runner.temp }}/nupkg/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, windows, x64]
+    steps:
+      - name: Download plugin artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ github.event.repository.name }}
+          path: ${{ runner.temp }}\${{ github.event.repository.name }}-artifact
+
+      - name: Deploy artifact
+        shell: pwsh
+        env:
+          DEPLOY_DIR: ${{ vars.PLUGIN_DEPLOY_DIR }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:DEPLOY_DIR)) {
+            $env:DEPLOY_DIR = "C:\github-deploy"
+            Write-Host "PLUGIN_DEPLOY_DIR is not set. Using default: $env:DEPLOY_DIR"
+          }
+          $artifactDir = Join-Path $env:RUNNER_TEMP "$($env:REPOSITORY_NAME)-artifact"
+          $dlls = @(Get-ChildItem -LiteralPath $artifactDir -Filter "*.dll" -File)
+          if ($dlls.Count -ne 1) {
+            throw "Expected exactly one plugin DLL in artifact, found $($dlls.Count)."
+          }
+          $source = $dlls[0].FullName
+          $destination = Join-Path $env:DEPLOY_DIR $dlls[0].Name
+          New-Item -ItemType Directory -Path $env:DEPLOY_DIR -Force | Out-Null
+          if (-not (Test-Path $destination)) {
+            Copy-Item $source $destination
+          } else {
+            $bytes = [System.IO.File]::ReadAllBytes($source)
+            $stream = [System.IO.File]::Open($destination, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+            try {
+              $stream.SetLength(0)
+              $stream.Write($bytes, 0, $bytes.Length)
+              $stream.Flush($true)
+            } finally {
+              $stream.Dispose()
+            }
+          }
+          Write-Host "Deployed: $destination"
+
+  publish-nuget:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download NuGet package artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.PACKAGE_ID }}.${{ needs.build.outputs.package_version }}
+          path: ${{ runner.temp }}/nupkg
+
+      - name: NuGet login
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ env.NUGET_USER }}
+
+      - name: Publish to NuGet
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=("$RUNNER_TEMP"/nupkg/*.nupkg)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "No NuGet packages found." >&2
+            exit 1
+          fi
+          for package in "${packages[@]}"; do
+            dotnet nuget push "$package" \
+              --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+              --source "$NUGET_SOURCE" \
+              --skip-duplicate
+          done
